@@ -1,37 +1,62 @@
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
 const editView = document.getElementById('edit-view');
 const resultView = document.getElementById('result-view');
 const categoriesEl = document.getElementById('categories');
 const resultContent = document.getElementById('result-content');
 
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// Which items *this* visitor has checked — personal, stays in localStorage.
+// The items themselves (name + photo) are shared via Firestore, see below.
+const checkedIds = new Set(JSON.parse(localStorage.getItem('campChecklistChecked') || '[]'));
+function saveChecked() {
+  localStorage.setItem('campChecklistChecked', JSON.stringify([...checkedIds]));
+}
+
+// Collapse/expand is session-only UI state, not persisted (matches prior behavior).
+const collapsedCats = new Set();
+const collapsedMids = new Set();
 
 // The category/mid/sub tree is fixed by CATEGORY_CONFIG (categories.js), not
-// user-editable. Only each subcategory's item list is user data, saved keyed
-// by its "대분류›중분류›소분류" id so edits to CATEGORY_CONFIG (reordering,
-// adding entries) don't disturb previously saved items — renaming an entry
-// does, since the id is name-based.
-function buildStateFromConfig(savedItemsBySubId) {
+// user-editable. Items are the shared Firestore catalog, keyed by their
+// "대분류›중분류›소분류" subId so renaming an entry in categories.js orphans
+// items added under the old name; reordering or adding entries is safe.
+// Flat itemId -> item lookup into the current `state` tree, rebuilt whenever
+// state is. Lets the checkbox handler mutate the live state object in place
+// (so getCheckedGroups() sees it immediately) without a full re-render.
+let itemsById = {};
+
+function buildStateFromConfig(itemsBySubId) {
+  itemsById = {};
   return CATEGORY_CONFIG.map(cat => ({
-    id: cat.name, name: cat.name, collapsed: false,
+    id: cat.name, name: cat.name,
     midcategories: cat.mids.map(mid => ({
-      id: `${cat.name}›${mid.name}`, name: mid.name, collapsed: false,
+      id: `${cat.name}›${mid.name}`, name: mid.name,
       subcategories: mid.subs.map(subName => {
         const subId = `${cat.name}›${mid.name}›${subName}`;
-        return { id: subId, name: subName, items: savedItemsBySubId[subId] || [] };
+        const items = (itemsBySubId[subId] || []).map(item => {
+          const full = { ...item, checked: checkedIds.has(item.id) };
+          itemsById[item.id] = full;
+          return full;
+        });
+        return { id: subId, name: subName, items };
       }),
     })),
   }));
 }
 
-let state = buildStateFromConfig(JSON.parse(localStorage.getItem('campChecklistItems') || '{}'));
+let state = buildStateFromConfig({});
+render();
 
-function save() {
-  const bySubId = {};
-  state.forEach(cat => cat.midcategories.forEach(mid => mid.subcategories.forEach(sub => {
-    bySubId[sub.id] = sub.items;
-  })));
-  localStorage.setItem('campChecklistItems', JSON.stringify(bySubId));
-}
+db.collection('items').onSnapshot(snapshot => {
+  const itemsBySubId = {};
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    (itemsBySubId[data.subId] ||= []).push({ id: doc.id, text: data.text, photo: data.photo || null });
+  });
+  state = buildStateFromConfig(itemsBySubId);
+  render();
+});
 
 function render() {
   categoriesEl.innerHTML = '';
@@ -45,28 +70,28 @@ function renderCategory(cat) {
     <div class="category-header" data-toggle="${cat.id}">
       <h2>${cat.name}</h2>
     </div>
-    <div class="category-body ${cat.collapsed ? 'collapsed' : ''}"></div>
+    <div class="category-body ${collapsedCats.has(cat.id) ? 'collapsed' : ''}"></div>
   `;
   const body = div.querySelector('.category-body');
-  cat.midcategories.forEach(mid => body.appendChild(renderMidcategory(cat, mid)));
+  cat.midcategories.forEach(mid => body.appendChild(renderMidcategory(mid)));
   return div;
 }
 
-function renderMidcategory(cat, mid) {
+function renderMidcategory(mid) {
   const div = document.createElement('div');
   div.className = 'midcategory';
   div.innerHTML = `
-    <div class="midcategory-header" data-toggle-mid="${mid.id}" data-cat="${cat.id}">
+    <div class="midcategory-header" data-toggle-mid="${mid.id}">
       <h3>${mid.name}</h3>
     </div>
-    <div class="subcategories ${mid.collapsed ? 'collapsed' : ''}"></div>
+    <div class="subcategories ${collapsedMids.has(mid.id) ? 'collapsed' : ''}"></div>
   `;
   const subs = div.querySelector('.subcategories');
-  mid.subcategories.forEach(sub => subs.appendChild(renderSubcategory(cat, mid, sub)));
+  mid.subcategories.forEach(sub => subs.appendChild(renderSubcategory(sub)));
   return div;
 }
 
-function renderSubcategory(cat, mid, sub) {
+function renderSubcategory(sub) {
   const div = document.createElement('div');
   div.className = 'subcategory';
   div.innerHTML = `
@@ -76,36 +101,35 @@ function renderSubcategory(cat, mid, sub) {
     <input type="text" class="item-search-input" placeholder="🔍 제품 검색" data-action="search-item">
     <div class="items"></div>
     <div class="add-item-row">
-      <input type="text" placeholder="항목 입력" data-cat="${cat.id}" data-mid="${mid.id}" data-sub="${sub.id}" class="new-item-input">
-      <button data-action="add-item" data-cat="${cat.id}" data-mid="${mid.id}" data-sub="${sub.id}">추가</button>
+      <input type="text" placeholder="항목 입력" data-sub="${sub.id}" class="new-item-input">
+      <button data-action="add-item" data-sub="${sub.id}">추가</button>
     </div>
   `;
   const items = div.querySelector('.items');
-  sub.items.forEach(item => items.appendChild(renderItem(cat, mid, sub, item)));
+  sub.items.forEach(item => items.appendChild(renderItem(item)));
   return div;
 }
 
-function renderItem(cat, mid, sub, item) {
+function renderItem(item) {
   const div = document.createElement('div');
   div.className = 'item-row';
-  const attrs = `data-cat="${cat.id}" data-mid="${mid.id}" data-sub="${sub.id}" data-item="${item.id}"`;
   const thumb = item.photo
-    ? `<img class="item-thumb" src="${item.photo}" data-action="pick-photo" ${attrs}>`
-    : `<span class="item-thumb empty" data-action="pick-photo" ${attrs}>📷</span>`;
+    ? `<img class="item-thumb" src="${item.photo}" data-action="pick-photo" data-item="${item.id}">`
+    : `<span class="item-thumb empty" data-action="pick-photo" data-item="${item.id}">📷</span>`;
   div.innerHTML = `
     ${thumb}
     <label>
-      <input type="checkbox" data-action="toggle-item" ${attrs} ${item.checked ? 'checked' : ''}>
+      <input type="checkbox" data-action="toggle-item" data-item="${item.id}" ${item.checked ? 'checked' : ''}>
       ${item.text}
     </label>
-    <button class="remove-item" data-action="del-item" ${attrs}>×</button>
   `;
   return div;
 }
 
-// ponytail: photos are downscaled + JPEG-compressed before storing as a
-// data URL in localStorage (5-10MB quota). Fine for a personal item list;
-// move to IndexedDB/object storage if items grow into the hundreds.
+// ponytail: photos are downscaled + JPEG-compressed before storing as a data
+// URL on the item's Firestore doc — keeps well under Firestore's 1MiB/doc
+// limit. Move to Cloud Storage (store a URL instead of inline data) if photos
+// need to be larger or items grow into the thousands.
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -128,62 +152,52 @@ photoInput.type = 'file';
 photoInput.accept = 'image/*';
 photoInput.style.display = 'none';
 document.body.appendChild(photoInput);
-let pickTarget = null;
+let pickTargetItemId = null;
 
 photoInput.addEventListener('change', async () => {
   const file = photoInput.files[0];
   photoInput.value = '';
-  if (!file || !pickTarget) return;
-  const { catId, midId, subId, itemId } = pickTarget;
+  if (!file || !pickTargetItemId) return;
   const dataUrl = await compressImage(file);
-  const sub = findSub(catId, midId, subId);
-  sub.items.find(i => i.id === itemId).photo = dataUrl;
-  save(); render();
+  db.collection('items').doc(pickTargetItemId).update({ photo: dataUrl });
 });
-
-function findCat(catId) { return state.find(c => c.id === catId); }
-function findMid(catId, midId) { return findCat(catId).midcategories.find(m => m.id === midId); }
-function findSub(catId, midId, subId) { return findMid(catId, midId).subcategories.find(s => s.id === subId); }
 
 categoriesEl.addEventListener('click', e => {
   const toggleHeader = e.target.closest('[data-toggle]');
-  if (toggleHeader && !e.target.closest('button')) {
-    const cat = findCat(toggleHeader.dataset.toggle);
-    cat.collapsed = !cat.collapsed;
-    save(); render();
+  if (toggleHeader) {
+    const id = toggleHeader.dataset.toggle;
+    collapsedCats.has(id) ? collapsedCats.delete(id) : collapsedCats.add(id);
+    render();
     return;
   }
 
   const toggleMidHeader = e.target.closest('[data-toggle-mid]');
-  if (toggleMidHeader && !e.target.closest('button')) {
-    const mid = findMid(toggleMidHeader.dataset.cat, toggleMidHeader.dataset.toggleMid);
-    mid.collapsed = !mid.collapsed;
-    save(); render();
+  if (toggleMidHeader) {
+    const id = toggleMidHeader.dataset.toggleMid;
+    collapsedMids.has(id) ? collapsedMids.delete(id) : collapsedMids.add(id);
+    render();
     return;
   }
 
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
-  const { action, cat: catId, mid: midId, sub: subId, item: itemId } = btn.dataset;
+  const { action, sub: subId, item: itemId } = btn.dataset;
 
   if (action === 'add-item') {
-    const input = categoriesEl.querySelector(`.new-item-input[data-cat="${catId}"][data-mid="${midId}"][data-sub="${subId}"]`);
-    addItem(catId, midId, subId, input);
-  } else if (action === 'del-item') {
-    const sub = findSub(catId, midId, subId);
-    sub.items = sub.items.filter(i => i.id !== itemId);
-    save(); render();
+    const input = categoriesEl.querySelector(`.new-item-input[data-sub="${subId}"]`);
+    addItem(subId, input);
   } else if (action === 'pick-photo') {
-    pickTarget = { catId, midId, subId, itemId };
+    pickTargetItemId = itemId;
     photoInput.click();
   }
 });
 
 categoriesEl.addEventListener('change', e => {
   if (e.target.dataset.action !== 'toggle-item') return;
-  const { cat: catId, mid: midId, sub: subId, item: itemId } = e.target.dataset;
-  findSub(catId, midId, subId).items.find(i => i.id === itemId).checked = e.target.checked;
-  save();
+  const itemId = e.target.dataset.item;
+  e.target.checked ? checkedIds.add(itemId) : checkedIds.delete(itemId);
+  saveChecked();
+  if (itemsById[itemId]) itemsById[itemId].checked = e.target.checked;
 });
 
 categoriesEl.addEventListener('input', e => {
@@ -198,15 +212,14 @@ categoriesEl.addEventListener('input', e => {
 
 categoriesEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.classList.contains('new-item-input')) return;
-  const { cat: catId, mid: midId, sub: subId } = e.target.dataset;
-  addItem(catId, midId, subId, e.target);
+  addItem(e.target.dataset.sub, e.target);
 });
 
-function addItem(catId, midId, subId, input) {
+function addItem(subId, input) {
   const text = input.value.trim();
   if (!text) return;
-  findSub(catId, midId, subId).items.push({ id: uid(), text, checked: false, photo: null });
-  save(); render();
+  input.value = '';
+  db.collection('items').add({ subId, text, photo: null, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
 }
 
 function getCheckedGroups() {
@@ -422,5 +435,3 @@ document.getElementById('share-btn').addEventListener('click', async e => {
     btn.disabled = false;
   }
 });
-
-render();
