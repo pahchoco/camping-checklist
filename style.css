@@ -169,7 +169,7 @@ h1::before { content: "⛺ "; }
 
 #result-view { background: var(--cream); }
 #result-view header { margin-bottom: 18px; }
-#result-view button {
+#result-view button, #settings-btn, #settings-view button {
   padding: 9px 16px;
   border: 1px solid var(--border);
   background: var(--card);
@@ -179,7 +179,23 @@ h1::before { content: "⛺ "; }
   font-weight: 600;
   transition: border-color 0.15s ease;
 }
-#result-view button:hover { border-color: var(--green); }
+#result-view button:hover, #settings-btn:hover, #settings-view button:hover { border-color: var(--green); }
+
+.setting-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.setting-info { cursor: pointer; flex: 1; }
+.setting-name { font-weight: 600; font-size: 15px; }
+.setting-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.setting-card button { padding: 6px 12px; font-size: 12px; }
 #result-view h1 { margin-bottom: 16px; }
 .result-category { margin-bottom: 26px; }
 .result-category h2 { font-size: 17px; color: var(--green-dark); border-bottom: 2px solid var(--accent); padding-bottom: 6px; }

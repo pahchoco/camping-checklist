@@ -3,14 +3,41 @@ const db = firebase.firestore();
 
 const editView = document.getElementById('edit-view');
 const resultView = document.getElementById('result-view');
+const settingsView = document.getElementById('settings-view');
 const categoriesEl = document.getElementById('categories');
 const resultContent = document.getElementById('result-content');
+const settingsList = document.getElementById('settings-list');
 
 // Which items *this* visitor has checked — personal, stays in localStorage.
 // The items themselves (name + photo) are shared via Firestore, see below.
 const checkedIds = new Set(JSON.parse(localStorage.getItem('campChecklistChecked') || '[]'));
 function saveChecked() {
   localStorage.setItem('campChecklistChecked', JSON.stringify([...checkedIds]));
+}
+
+// Named snapshots of checkedIds — personal, stays in localStorage alongside
+// the working checked state above.
+const SETTINGS_KEY = 'campChecklistSavedSettings';
+function loadSettings() {
+  return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '[]');
+}
+function saveSettingsList(list) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(list));
+}
+function saveCurrentAsSetting(name) {
+  const settings = loadSettings();
+  settings.push({ id: Date.now().toString(), name, date: new Date().toISOString(), itemIds: [...checkedIds] });
+  saveSettingsList(settings);
+}
+function deleteSetting(id) {
+  saveSettingsList(loadSettings().filter(s => s.id !== id));
+}
+function applySetting(setting) {
+  checkedIds.clear();
+  setting.itemIds.forEach(id => { if (itemsById[id]) checkedIds.add(id); });
+  saveChecked();
+  Object.values(itemsById).forEach(item => { item.checked = checkedIds.has(item.id); });
+  render();
 }
 
 // Collapse/expand is session-only UI state, not persisted (matches prior behavior).
@@ -276,6 +303,64 @@ document.getElementById('camp-btn').addEventListener('click', () => {
 document.getElementById('back-btn').addEventListener('click', () => {
   resultView.hidden = true;
   editView.hidden = false;
+});
+
+document.getElementById('save-setting-btn').addEventListener('click', () => {
+  if (!checkedIds.size) { alert('체크된 항목이 없습니다.'); return; }
+  const name = prompt('세팅 이름을 입력하세요 (예: 빈티지 캠핑)');
+  if (!name || !name.trim()) return;
+  saveCurrentAsSetting(name.trim());
+  alert('저장되었습니다.');
+});
+
+function renderSettingsList() {
+  const settings = loadSettings();
+  settingsList.innerHTML = '';
+  if (!settings.length) {
+    settingsList.innerHTML = '<p class="empty-msg">저장된 세팅이 없습니다.</p>';
+    return;
+  }
+  settings.slice().reverse().forEach(setting => {
+    const div = document.createElement('div');
+    div.className = 'setting-card';
+    const dateStr = new Date(setting.date).toLocaleDateString('ko-KR');
+    div.innerHTML = `
+      <div class="setting-info" data-action="load-setting" data-id="${setting.id}">
+        <div class="setting-name">${setting.name}</div>
+        <div class="setting-date">${dateStr}</div>
+      </div>
+      <button data-action="delete-setting" data-id="${setting.id}">삭제</button>
+    `;
+    settingsList.appendChild(div);
+  });
+}
+
+document.getElementById('settings-btn').addEventListener('click', () => {
+  renderSettingsList();
+  editView.hidden = true;
+  settingsView.hidden = false;
+});
+
+document.getElementById('settings-back-btn').addEventListener('click', () => {
+  settingsView.hidden = true;
+  editView.hidden = false;
+});
+
+settingsList.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const setting = loadSettings().find(s => s.id === btn.dataset.id);
+  if (!setting) return;
+
+  if (btn.dataset.action === 'load-setting') {
+    applySetting(setting);
+    settingsView.hidden = true;
+    editView.hidden = false;
+  } else if (btn.dataset.action === 'delete-setting') {
+    if (!confirm(`"${setting.name}" 세팅을 삭제할까요?`)) return;
+    deleteSetting(setting.id);
+    renderSettingsList();
+  }
 });
 
 function loadImage(src) {

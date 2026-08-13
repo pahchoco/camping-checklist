@@ -11,6 +11,7 @@
 <div id="edit-view">
   <header>
     <h1>캠핑 세팅 체크리스트</h1>
+    <button id="settings-btn">📋 내 세팅 목록</button>
   </header>
   <div id="categories"></div>
 </div>
@@ -19,9 +20,18 @@
   <header>
     <button id="back-btn">← 편집으로 돌아가기</button>
     <button id="share-btn">📤 이미지로 공유</button>
+    <button id="save-setting-btn">💾 이 세팅 저장하기</button>
   </header>
   <h1>내 캠핑 세팅 완성! 🏕️</h1>
   <div id="result-content"></div>
+</div>
+
+<div id="settings-view" hidden>
+  <header>
+    <button id="settings-back-btn">← 편집으로 돌아가기</button>
+  </header>
+  <h1>내 세팅 목록</h1>
+  <div id="settings-list"></div>
 </div>
 
 <button id="camp-btn">camp! 🏕️</button>
