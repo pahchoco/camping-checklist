@@ -11,8 +11,8 @@ const settingsList = document.getElementById('settings-list');
 // Maps CATEGORY_CONFIG's 대분류 names (categories.js) to a placeholder icon,
 // shown on result cards for items with no uploaded photo.
 const CATEGORY_ICONS = {
-  '텐트/쉘터': '⛺', '침구/수면': '🛏️', '취사': '🍳', '가구/조명': '🪑',
-  '화로/난방': '🔥', '수납/운반': '🎒', '차량/오토캠핑': '🚙', '소품/데코': '✨',
+  '텐트/쉘터': '⛺', '침구/수면': '🛏️', '취사': '🥘', '가구/조명': '🪑',
+  '화로/난방': '🔥', '수납/운반': '🧳', '차량/오토캠핑': '🚙', '소품/데코': '✨',
 };
 const SETTING_TAG_COLORS = ['var(--green)', 'var(--khaki)', 'var(--accent)'];
 
