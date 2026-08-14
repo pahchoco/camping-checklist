@@ -8,6 +8,14 @@ const categoriesEl = document.getElementById('categories');
 const resultContent = document.getElementById('result-content');
 const settingsList = document.getElementById('settings-list');
 
+// Maps CATEGORY_CONFIG's 대분류 names (categories.js) to a placeholder icon,
+// shown on result cards for items with no uploaded photo.
+const CATEGORY_ICONS = {
+  '텐트/쉘터': '⛺', '침구/수면': '🛏️', '취사': '🍳', '가구/조명': '🪑',
+  '화로/난방': '🔥', '수납/운반': '🎒', '차량/오토캠핑': '🚙', '소품/데코': '✨',
+};
+const SETTING_TAG_COLORS = ['var(--green)', 'var(--khaki)', 'var(--accent)'];
+
 // Which items *this* visitor has checked — personal, stays in localStorage.
 // The items themselves (name + photo) are shared via Firestore, see below.
 const checkedIds = new Set(JSON.parse(localStorage.getItem('campChecklistChecked') || '[]'));
@@ -282,7 +290,7 @@ document.getElementById('camp-btn').addEventListener('click', () => {
         subDiv.className = 'result-sub';
         const cards = items.map(i => `
           <div class="result-card">
-            ${i.photo ? `<img src="${i.photo}">` : `<div class="no-photo">🏕️</div>`}
+            ${i.photo ? `<img src="${i.photo}">` : `<div class="no-photo">${CATEGORY_ICONS[cat.name] || '⛺'}</div>`}
             <div class="name">${i.text}</div>
           </div>
         `).join('');
@@ -320,14 +328,18 @@ function renderSettingsList() {
     settingsList.innerHTML = '<p class="empty-msg">저장된 세팅이 없습니다.</p>';
     return;
   }
-  settings.slice().reverse().forEach(setting => {
+  settings.slice().reverse().forEach((setting, i) => {
     const div = document.createElement('div');
     div.className = 'setting-card';
     const dateStr = new Date(setting.date).toLocaleDateString('ko-KR');
+    const tagColor = SETTING_TAG_COLORS[i % SETTING_TAG_COLORS.length];
     div.innerHTML = `
       <div class="setting-info" data-action="load-setting" data-id="${setting.id}">
-        <div class="setting-name">${setting.name}</div>
-        <div class="setting-date">${dateStr}</div>
+        <div class="setting-tag" style="background:${tagColor}">🏕️</div>
+        <div>
+          <div class="setting-name">${setting.name}</div>
+          <div class="setting-date">${dateStr}</div>
+        </div>
       </div>
       <button data-action="delete-setting" data-id="${setting.id}">삭제</button>
     `;
@@ -439,6 +451,7 @@ async function buildResultCanvas() {
   cy += 50;
 
   groups.forEach(({ cat, mids }) => {
+    const catIcon = CATEGORY_ICONS[cat.name] || '⛺';
     ctx.fillStyle = '#222';
     ctx.font = 'bold 20px sans-serif';
     ctx.fillText(cat.name, PAD, cy + 20);
@@ -477,7 +490,7 @@ async function buildResultCanvas() {
             ctx.fillStyle = '#aaa';
             ctx.font = '32px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('🏕️', x + CARD / 2, cardY + CARD / 2 + 10);
+            ctx.fillText(catIcon, x + CARD / 2, cardY + CARD / 2 + 10);
           }
           ctx.fillStyle = '#222';
           ctx.font = '13px sans-serif';
