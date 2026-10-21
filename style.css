@@ -13,6 +13,7 @@
 }
 
 * { box-sizing: border-box; }
+button, input, textarea, select { font-family: inherit; }
 body {
   font-family: var(--font-kr);
   max-width: 720px;
@@ -160,6 +161,7 @@ h1::before { content: "⛺ "; }
   left: 50%;
   transform: translateX(-50%);
   padding: 15px 32px;
+  font-family: var(--font-display);
   font-size: 16px;
   font-weight: bold;
   background: linear-gradient(135deg, var(--accent), #b85f05);
